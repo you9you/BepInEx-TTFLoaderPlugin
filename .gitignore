@@ -1,0 +1,107 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+[Build]/ 
+[Bb]uild/
+
+# Visual Studio
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.csproj.user
+.vs/
+.vscode/
+
+# Rider
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+_ReSharper*/
+_ReSharper.*/
+_ReSharper.*/
+*.ReSharper
+*.ReSharper.*
+_ReSharper*
+_ReSharper.*
+_ReSharper.Caches*
+build/
+*.DotSettings
+*.DotSettings.user
+
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Aa]ssets/AssetStoreTools*
+
+# BepInEx
+BepInEx/
+!BepInEx/core/
+!BepInEx/plugins/
+
+# NuGet
+*.nuget.props
+*.nuget.targets
+packages/
+*.nuget.cache
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug/Release
+Debug/
+Release/
+x64/
+x86/
+
+# Logs
+*.log
+
+# Project files
+*.zip
+*.rar
+*.7z
+
+# Development
+.deps/
+.runtime/
+.publish/
+
+# Rider HTTP Client
+.http
+
+# Generated files
+*.pidb
+*.unityobj
+*.svd
+*.tmp
+*.pdb
+*.userprefs
+*.usync
+*.cache
+*.pidb.meta
+*.pdb.meta
+*.userprefs.meta
+*.usync.meta
+*.cache.meta
+Assembly-CSharp.csproj
+Assembly-CSharp-firstpass.csproj
+Assembly-CSharp-Editor.csproj
+Assembly-CSharp-Editor-firstpass.csproj
+
+# Rider specific
+*.DotSettings
+*.DotSettings.user
+_RiderHelpers/
