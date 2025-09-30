@@ -76,7 +76,7 @@ jobs:
       with:
         # 将 artifacts 目录下的所有 DLL 文件作为附件上传到 Release
         files: artifacts/*.dll
-        name: TTFLoader ${{ steps.get_version.outputs.version }} - Multi Target
+        name: TTFLoader ${{ steps.get_version.outputs.version }}
         body: |
           ## TTFLoader ${{ steps.get_version.outputs.version }}
           
