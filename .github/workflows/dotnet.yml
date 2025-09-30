@@ -4,7 +4,7 @@ name: Build and Release
 on:
   push:
     branches: [ "main" ]
-    tags: [ "v*" ]
+    tags: [ "v*" ] # 仅在推送 Tag 时创建 Release
   pull_request:
     branches: [ "main" ]
 
@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # 需要写入权限来创建 Release
 
     steps:
     - uses: actions/checkout@v4
@@ -23,75 +23,75 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 8.0.x
+        # 安装必要的 .NET SDK 版本
+        dotnet-version: |
+          8.0.x 
+          6.0.x 
 
     - name: Restore dependencies
-      run: dotnet restore ./TTFLoaderPlugin.sln
+      # 使用解决方案文件进行还原
+      run: dotnet restore ./BepInEx-TTFLoaderPlugin.sln
 
     - name: Build
-      run: dotnet build ./TTFLoaderPlugin.sln --no-restore -c Release
+      # 编译整个解决方案，使用 Release 配置
+      run: dotnet build ./BepInEx-TTFLoaderPlugin.sln --no-restore -c Release
 
-    - name: Find DLL path
-      id: find_dll
+    - name: Find and Copy DLL files
+      id: find_dlls_and_copy
       run: |
-        # 查找编译生成的DLL文件
-        DLL_PATH=$(find . -name "TTFLoader.dll" -path "*/Release/*" | head -n 1)
-        if [ -z "$DLL_PATH" ]; then
-          echo "DLL not found, listing build directory:"
-          find . -name "*.dll" -o -name "bin" -o -name "obj" | head -20
+        # 创建 artifact 目录
+        mkdir -p artifacts
+        
+        # 查找 IL2CPP DLL 并复制
+        DLL_IL2CPP=$(find . -name "TTFLoaderIL2CPP.dll" -path "*/Release/*" | head -n 1)
+        if [ -z "$DLL_IL2CPP" ]; then
+          echo "TTFLoaderIL2CPP.dll not found!"
           exit 1
         fi
-        echo "dll_path=$DLL_PATH" >> $GITHUB_OUTPUT
-        echo "Found DLL at: $DLL_PATH"
-
-    - name: Create artifact directory
-      run: |
-        mkdir -p artifacts
-        mkdir -p publish
-
-    - name: Copy plugin files
-      run: |
-        # Copy the built DLL using the found path
-        cp ${{ steps.find_dll.outputs.dll_path }} artifacts/
+        echo "Found TTFLoaderIL2CPP.dll at: $DLL_IL2CPP"
+        cp "$DLL_IL2CPP" artifacts/
         
-        # Copy README and LICENSE if they exist
-        if [ -f README.md ]; then cp README.md artifacts/; fi
-        if [ -f LICENSE ]; then cp LICENSE artifacts/; fi
+        # 查找 Mono DLL 并复制
+        DLL_MONO=$(find . -name "TTFLoaderMono.dll" -path "*/Release/*" | head -n 1)
+        if [ -z "$DLL_MONO" ]; then
+          echo "TTFLoaderMono.dll not found!"
+          exit 1
+        fi
+        echo "Found TTFLoaderMono.dll at: $DLL_MONO"
+        cp "$DLL_MONO" artifacts/
+        
+        # 移除 README 和 LICENSE 复制步骤
 
-    - name: Create zip package
-      run: |
-        cd artifacts
-        zip -r ../publish/TTFLoader-${{ steps.get_version.outputs.version }}.zip .
-
-    - name: Upload artifacts
+    - name: Upload Artifacts
+      # 上传构建产物，以便在 workflow 运行结束后下载检查
       uses: actions/upload-artifact@v4
       with:
-        name: TTFLoader-${{ steps.get_version.outputs.version }}
+        name: TTFLoader-MultiTarget-${{ steps.get_version.outputs.version }}
         path: artifacts/
 
     - name: Create Release
+      # 仅在 Tag 推送时执行
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/v')
       with:
-        files: publish/TTFLoader-${{ steps.get_version.outputs.version }}.zip
-        name: TTFLoader ${{ steps.get_version.outputs.version }}
+        # 将 artifacts 目录下的所有 DLL 文件作为附件上传到 Release
+        files: artifacts/*.dll
+        name: TTFLoader ${{ steps.get_version.outputs.version }} - Multi Target
         body: |
           ## TTFLoader ${{ steps.get_version.outputs.version }}
           
-          A BepInEx plugin for loading TTF fonts in Unity IL2CPP games.
+          此版本包含针对 IL2CPP 和 Mono 目标框架的 DLL 文件。
+          请根据您的游戏环境选择对应的 DLL 文件！
           
-          ### Changes
-          - [Add your changes here]
+          ### 文件说明
+          - **`TTFLoaderIL2CPP.dll`**: 适用于使用 **IL2CPP** 脚本后端游戏的 BepInEx。
+          - **`TTFLoaderMono.dll`**: 适用于使用 **Mono** 脚本后端游戏的 BepInEx。
           
-          ### Installation
-          1. Extract the zip file
-          2. Copy `TTFLoader.dll` to your game's `BepInEx/plugins/` folder
-          3. Place your `.ttf` font files in the game root directory
+          ### 安装
+          1. 下载对应您游戏环境的 DLL 文件。
+          2. 复制到您的游戏 `BepInEx/plugins/` 文件夹。
+          3. 将 `.ttf` 字体文件放在游戏根目录。
           
-          ### Requirements
-          - BepInEx 6.x (IL2CPP)
-          - Unity 2023.x
-          - TextMesh Pro
         draft: false
         prerelease: false
       env:
