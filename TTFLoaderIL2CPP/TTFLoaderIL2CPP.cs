@@ -66,9 +66,36 @@ namespace TTFLoaderIL2CPP
 
                     if (customFont != null)
                     {
-                        TMP_Settings.defaultFontAsset = customFont;
-                        Log.LogInfo($"Successfully set default TMP font to: {fontName}");
-                        return; // 成功加载一个就退出
+                        try
+                        {
+                            TMP_Settings.defaultFontAsset = customFont;
+                            Log.LogInfo($"Successfully set default TMP font to: {fontName}");
+                            return; // 成功加载一个就退出
+                        }
+                        catch (System.Exception)
+                        {
+                            // 尝试使用反射绕过权限限制
+                            // 获取 TMP_Settings 类型
+                            var settingsType = typeof(TMPro.TMP_Settings);
+                            // 查找字段（TMP 内部通常将其存储在 s_defaultFontAsset 或类似字段中）
+                            // 或者尝试获取 PropertyInfo
+                            var prop = settingsType.GetProperty("defaultFontAsset", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
+
+                            if (prop != null && prop.CanWrite)
+                            {
+                                prop.SetValue(null, customFont);
+                            }
+                            else
+                            {
+                                // 如果属性不可写，尝试直接写私有背景字段 (不同版本 TMP 字段名可能不同，常见为 k_DefaultFontAsset)
+                                var field = settingsType.GetField("k_DefaultFontAsset", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+                                field?.SetValue(null, customFont);
+                            }
+
+                            Log.LogInfo($"Successfully set default TMP font via Reflection: {fontName}");
+                            return;
+                        }
+
                     }
                     else
                     {
