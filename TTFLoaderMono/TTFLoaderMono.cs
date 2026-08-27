@@ -17,6 +17,8 @@ using System;
 using System.IO;
 using TMPro;
 using System.Collections;
+using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine.SceneManagement;
 
 namespace TTFLoaderMono
@@ -106,19 +108,77 @@ namespace TTFLoaderMono
             if (dynamicFont != null)
             {
                 // 查找所有激活或非激活的 UnityEngine.UI.Text 组件
-                var allTexts = FindObjectsOfType<UnityEngine.UI.Text>(true); // includeInactive = true
-                foreach (var text in allTexts)
+                // 注意：不直接调用 FindObjectsOfType<T>(bool includeInactive)，
+                // 该重载仅在 Unity 5.3+ 存在，在更旧的 Unity 运行时上会抛出 MissingMethodException。
+                // 改用反射按需选择可用重载，保证跨版本兼容。
+                foreach (var text in FindAllTextComponents(includeInactive: true))
                 {
-                    // 可选：只替换使用默认字体（Arial）的文本
-                    // if (text.font == null || text.font.name == "Arial" || text.font.name.Contains("Default"))
-                    // {
-                    //     text.font = baseFont;
-                    // }
-
                     // 将所有找到的 UI.Text 组件的字体设置为加载的动态字体
                     text.font = dynamicFont;
                 }
             }
+        }
+
+        /// <summary>
+        /// 通过反射查找所有 UI.Text 组件，兼容不同 Unity 版本中
+        /// Object.FindObjectsOfType 重载的可用情况，避免 MissingMethodException。
+        /// </summary>
+        /// <param name="includeInactive">是否包含挂载在非激活 GameObject 上的组件</param>
+        /// <returns>找到的 UI.Text 组件列表</returns>
+        private List<UnityEngine.UI.Text> FindAllTextComponents(bool includeInactive)
+        {
+            Type textType = typeof(UnityEngine.UI.Text);
+            Type objectType = typeof(UnityEngine.Object);
+            object found = null;
+
+            // 优先尝试带 includeInactive 参数的泛型重载（Unity 5.3+）
+            // 签名：T[] FindObjectsOfType<T>(bool includeInactive)
+            MethodInfo includeInactiveMethod = objectType.GetMethod(
+                "FindObjectsOfType",
+                BindingFlags.Static | BindingFlags.Public,
+                null,
+                new[] { typeof(bool) },
+                null);
+
+            if (includeInactiveMethod != null)
+            {
+                found = includeInactiveMethod
+                    .MakeGenericMethod(textType)
+                    .Invoke(null, new object[] { includeInactive });
+            }
+
+            // 回退：使用无参泛型重载（所有 Unity 版本都有），
+            // 该重载只返回激活对象，但可保证不崩溃。
+            if (found == null)
+            {
+                MethodInfo basicMethod = objectType.GetMethod(
+                    "FindObjectsOfType",
+                    BindingFlags.Static | BindingFlags.Public,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+
+                if (basicMethod != null)
+                {
+                    found = basicMethod
+                        .MakeGenericMethod(textType)
+                        .Invoke(null, null);
+                }
+            }
+
+            var result = new List<UnityEngine.UI.Text>();
+            if (found is object[] array)
+            {
+                foreach (var obj in array)
+                {
+                    if (obj is UnityEngine.UI.Text text)
+                    {
+                        result.Add(text);
+                    }
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
