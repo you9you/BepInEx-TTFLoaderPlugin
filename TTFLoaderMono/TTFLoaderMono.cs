@@ -276,7 +276,7 @@ namespace TTFLoaderMono
             }
 
             // 3) 查找已加载的 TMP_Settings 对象（ScriptableObject 资源）
-            foreach (object obj in Resources.FindObjectsOfTypeAll(settingsType))
+            foreach (object obj in UnityEngine.Resources.FindObjectsOfTypeAll(settingsType))
             {
                 if (obj != null)
                     return obj;
