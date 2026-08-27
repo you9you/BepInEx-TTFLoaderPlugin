@@ -3,10 +3,10 @@ name: Build and Release
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
     tags: [ "v*" ] # 仅在推送 Tag 时创建 Release
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
 
 jobs:
   build:
@@ -17,8 +17,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: battila7/get-version-action@v2
-      id: get_version
+    - name: Generate Time-based Version
+      id: gen_version
+      run: |
+        VERSION="v$(date -u +%Y.%m.%d-%H%M%S)"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Generated version: $VERSION"
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -66,7 +70,7 @@ jobs:
       # 上传构建产物，以便在 workflow 运行结束后下载检查
       uses: actions/upload-artifact@v4
       with:
-        name: TTFLoader-MultiTarget-${{ steps.get_version.outputs.version }}
+        name: TTFLoader-MultiTarget-${{ steps.gen_version.outputs.version }}
         path: artifacts/
 
     - name: Create Release
@@ -76,9 +80,9 @@ jobs:
       with:
         # 将 artifacts 目录下的所有 DLL 文件作为附件上传到 Release
         files: artifacts/*.dll
-        name: TTFLoader ${{ steps.get_version.outputs.version }}
+        name: TTFLoader ${{ steps.gen_version.outputs.version }}
         body: |
-          ## TTFLoader ${{ steps.get_version.outputs.version }}
+          ## TTFLoader ${{ steps.gen_version.outputs.version }}
           
           此版本包含针对 IL2CPP 和 Mono 目标框架的 DLL 文件。
           请根据您的游戏环境选择对应的 DLL 文件！
@@ -93,6 +97,6 @@ jobs:
           3. 将 `.ttf` 字体文件放在游戏根目录。
           
         draft: false
-        prerelease: false
+        prerelease: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
