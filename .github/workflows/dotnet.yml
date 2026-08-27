@@ -3,10 +3,10 @@ name: Build and Release
 
 on:
   push:
-    branches: [ "main", "dev" ]
-    tags: [ "v*" ] # 仅在推送 Tag 时创建 Release
+    branches: [ "dev" ] # 只有 dev 分支的每次 push 都会触发构建
+    tags: [ "v*" ] # 推送 tag 时构建并创建 Release（从 main 打 tag）
   pull_request:
-    branches: [ "main", "dev" ]
+    branches: [ "dev" ] # 只有 dev 分支的 PR 才触发构建
 
 jobs:
   build:
