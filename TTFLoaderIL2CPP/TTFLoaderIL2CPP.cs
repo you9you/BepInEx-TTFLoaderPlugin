@@ -66,36 +66,31 @@ namespace TTFLoaderIL2CPP
 
                     if (customFont != null)
                     {
+                        // 直接赋值（若该 TMP 版本的 defaultFontAsset 属性可写）
+                        bool ok = false;
                         try
                         {
                             TMP_Settings.defaultFontAsset = customFont;
+                            ok = true;
+                        }
+                        catch (System.Exception ex)
+                        {
+                            Log.LogInfo($"Direct assignment failed, using reflection: {ex.Message}");
+                        }
+
+                        // 反射回退：写入 TMP_Settings 的私有背板字段
+                        if (!ok)
+                        {
+                            ok = SetTMPDefaultFontViaReflection(customFont);
+                        }
+
+                        if (ok)
+                        {
                             Log.LogInfo($"Successfully set default TMP font to: {fontName}");
                             return; // 成功加载一个就退出
                         }
-                        catch (System.Exception)
-                        {
-                            // 尝试使用反射绕过权限限制
-                            // 获取 TMP_Settings 类型
-                            var settingsType = typeof(TMPro.TMP_Settings);
-                            // 查找字段（TMP 内部通常将其存储在 s_defaultFontAsset 或类似字段中）
-                            // 或者尝试获取 PropertyInfo
-                            var prop = settingsType.GetProperty("defaultFontAsset", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
 
-                            if (prop != null && prop.CanWrite)
-                            {
-                                prop.SetValue(null, customFont);
-                            }
-                            else
-                            {
-                                // 如果属性不可写，尝试直接写私有背景字段 (不同版本 TMP 字段名可能不同，常见为 k_DefaultFontAsset)
-                                var field = settingsType.GetField("k_DefaultFontAsset", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-                                field?.SetValue(null, customFont);
-                            }
-
-                            Log.LogInfo($"Successfully set default TMP font via Reflection: {fontName}");
-                            return;
-                        }
-
+                        Log.LogWarning($"Could not set default TMP font for: {fontName}");
                     }
                     else
                     {
@@ -109,6 +104,123 @@ namespace TTFLoaderIL2CPP
             {
                 Log.LogError($"Error loading default font from directory: {ex.Message}\n{ex.StackTrace}");
             }
+        }
+
+        /// <summary>
+        /// 通过反射写入 TMP_Settings 的私有背板字段，设置默认字体。
+        ///
+        /// TMP_Settings.defaultFontAsset 属性在部分 TMP 版本中只读（无 setter），
+        /// 直接赋值会失败。此时通过反射写入其背板字段 m_defaultFontAsset。
+        /// 字段名已通过对 Unity.TextMeshPro.dll 元数据的分析确认。
+        /// </summary>
+        /// <param name="fontAsset">要设置的 TMP_FontAsset</param>
+        /// <returns>是否设置成功</returns>
+        private bool SetTMPDefaultFontViaReflection(TMP_FontAsset fontAsset)
+        {
+            try
+            {
+                var settingsType = typeof(TMPro.TMP_Settings);
+
+                // 候选字段名（不同 TMP 版本内部字段名可能不同）
+                string[] fieldNames = {
+                    "m_defaultFontAsset",
+                    "s_defaultFontAsset",
+                    "k_DefaultFontAsset"
+                };
+
+                // 1) 尝试静态字段
+                foreach (string name in fieldNames)
+                {
+                    var field = settingsType.GetField(name,
+                        System.Reflection.BindingFlags.Static |
+                        System.Reflection.BindingFlags.NonPublic |
+                        System.Reflection.BindingFlags.Public);
+                    if (field != null)
+                    {
+                        field.SetValue(null, fontAsset);
+                        Log.LogInfo($"Successfully set default TMP font via static field '{name}'");
+                        return true;
+                    }
+                }
+
+                // 2) 尝试实例字段，需获取单例实例
+                object instance = GetTMPSettingsInstance(settingsType);
+                if (instance != null)
+                {
+                    foreach (string name in fieldNames)
+                    {
+                        var field = settingsType.GetField(name,
+                            System.Reflection.BindingFlags.Instance |
+                            System.Reflection.BindingFlags.NonPublic |
+                            System.Reflection.BindingFlags.Public);
+                        if (field != null)
+                        {
+                            field.SetValue(instance, fontAsset);
+                            Log.LogInfo($"Successfully set default TMP font via instance field '{name}'");
+                            return true;
+                        }
+                    }
+                }
+
+                // 3) 最后尝试通过可写属性直接设置
+                var prop = settingsType.GetProperty("defaultFontAsset",
+                    System.Reflection.BindingFlags.Static |
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Public);
+                if (prop != null && prop.CanWrite)
+                {
+                    prop.SetValue(null, fontAsset);
+                    Log.LogInfo("Successfully set default TMP font via property");
+                    return true;
+                }
+
+                Log.LogWarning("Could not find TMP_Settings backing field for default font");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log.LogError($"Error setting TMP default font via reflection: {ex.Message}\n{ex.StackTrace}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 获取 TMP_Settings 的单例实例。
+        /// 依次尝试：instance 属性、s_instance 静态字段、已加载的对象查找。
+        /// </summary>
+        /// <param name="settingsType">TMP_Settings 类型</param>
+        /// <returns>TMP_Settings 实例，找不到返回 null</returns>
+        private object GetTMPSettingsInstance(Type settingsType)
+        {
+            // 1) 通过 instance 属性
+            var instanceProp = settingsType.GetProperty("instance",
+                System.Reflection.BindingFlags.Static |
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Public);
+            if (instanceProp != null && instanceProp.CanRead)
+            {
+                object inst = instanceProp.GetValue(null);
+                if (inst != null) return inst;
+            }
+
+            // 2) 通过 s_instance 静态字段
+            var sInstanceField = settingsType.GetField("s_instance",
+                System.Reflection.BindingFlags.Static |
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Public);
+            if (sInstanceField != null)
+            {
+                object inst = sInstanceField.GetValue(null);
+                if (inst != null) return inst;
+            }
+
+            // 3) 查找已加载的 TMP_Settings 对象
+            foreach (var obj in Resources.FindObjectsOfTypeAll(settingsType))
+            {
+                if (obj != null) return obj;
+            }
+
+            return null;
         }
 
         /// <summary>

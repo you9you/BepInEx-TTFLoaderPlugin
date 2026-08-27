@@ -182,6 +182,110 @@ namespace TTFLoaderMono
         }
 
         /// <summary>
+        /// 通过反射设置 TMP_Settings 的默认字体。
+        /// TMP_Settings.defaultFontAsset 属性在部分 TMP 版本中只读（无 setter），
+        /// 因此直接写入其私有背板字段 m_defaultFontAsset（TMP 标准内部实现）。
+        /// </summary>
+        /// <param name="fontAsset">要设置的 TMP_FontAsset</param>
+        /// <param name="fontName">字体名（用于日志）</param>
+        /// <returns>是否设置成功</returns>
+        private bool SetTMPDefaultFont(TMP_FontAsset fontAsset, string fontName)
+        {
+            try
+            {
+                Type settingsType = typeof(TMP_Settings);
+
+                // 候选字段名（不同 TMP 版本内部字段名可能不同）
+                string[] fieldNames = {
+                    "m_defaultFontAsset",
+                    "s_defaultFontAsset",
+                    "k_DefaultFontAsset"
+                };
+
+                // 1) 尝试静态字段（某些 TMP 版本的 defaultFontAsset 直接读静态字段）
+                foreach (string name in fieldNames)
+                {
+                    FieldInfo field = settingsType.GetField(name, BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+                    if (field != null)
+                    {
+                        field.SetValue(null, fontAsset);
+                        Logger.LogInfo($"Successfully set default TMP font via static field '{name}': {fontName}");
+                        return true;
+                    }
+                }
+
+                // 2) 尝试实例字段（TMP 3.x 标准实现：getter 读取单例 s_instance 的 m_defaultFontAsset）
+                object instance = GetTMPSettingsInstance(settingsType);
+                if (instance != null)
+                {
+                    foreach (string name in fieldNames)
+                    {
+                        FieldInfo field = settingsType.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                        if (field != null)
+                        {
+                            field.SetValue(instance, fontAsset);
+                            Logger.LogInfo($"Successfully set default TMP font via instance field '{name}': {fontName}");
+                            return true;
+                        }
+                    }
+                }
+
+                // 3) 最后尝试通过可写属性直接设置（某些 TMP 版本有 setter）
+                PropertyInfo prop = settingsType.GetProperty("defaultFontAsset", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+                if (prop != null && prop.CanWrite)
+                {
+                    prop.SetValue(null, fontAsset);
+                    Logger.LogInfo($"Successfully set default TMP font via property: {fontName}");
+                    return true;
+                }
+
+                Logger.LogWarning($"Could not find TMP_Settings backing field, will use UI.Text fallback for: {fontName}");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Error setting TMP default font: {ex.Message}\n{ex.StackTrace}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 获取 TMP_Settings 的单例实例。
+        /// 依次尝试：instance 属性、s_instance 静态字段、已加载的对象查找。
+        /// </summary>
+        /// <param name="settingsType">TMP_Settings 类型</param>
+        /// <returns>TMP_Settings 实例，找不到返回 null</returns>
+        private object GetTMPSettingsInstance(Type settingsType)
+        {
+            // 1) 通过 instance 属性（TMP 3.x 标准）
+            PropertyInfo instanceProp = settingsType.GetProperty("instance", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+            if (instanceProp != null && instanceProp.CanRead)
+            {
+                object inst = instanceProp.GetValue(null);
+                if (inst != null)
+                    return inst;
+            }
+
+            // 2) 通过 s_instance 静态字段
+            FieldInfo sInstanceField = settingsType.GetField("s_instance", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+            if (sInstanceField != null)
+            {
+                object inst = sInstanceField.GetValue(null);
+                if (inst != null)
+                    return inst;
+            }
+
+            // 3) 查找已加载的 TMP_Settings 对象（ScriptableObject 资源）
+            foreach (object obj in Resources.FindObjectsOfTypeAll(settingsType))
+            {
+                if (obj != null)
+                    return obj;
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// 从预设的字体目录中枚举所有 TTF 文件，尝试加载第一个可用的字体
         /// 并将其用作默认的 TMP 字体或动态字体。
         /// </summary>
@@ -209,12 +313,24 @@ namespace TTFLoaderMono
 
                     if (customFont != null)
                     {
-                        // 注意：Mono 环境下无法为属性或索引器“TMP_Settings.defaultFontAsset”赋值 - 它是只读的
-                        // TMP_Settings.defaultFontAsset = customFont;
-                        TextMeshProUGUI textMeshProText = GetComponent<TextMeshProUGUI>();
-                        textMeshProText.font = customFont;
-                        Logger.LogInfo($"Successfully set default TMP font to: {fontName}");
-                        return; // 成功加载一个就退出
+                        // 通过反射设置 TMP_Settings 的私有背板字段
+                        // 因为 defaultFontAsset 属性在部分版本中只读
+                        if (SetTMPDefaultFont(customFont, fontName))
+                        {
+                            return; // 成功加载一个就退出
+                        }
+
+                        // TMP 资源创建成功但无法设置默认字体，
+                        // 回退到 UI.Text 动态字体方案（加载系统/本地字体替换 UI.Text）
+                        Logger.LogWarning($"TMP default font setting failed, falling back to UI.Text dynamic font: {fontName}");
+                        Font fallback = LoadTTF(fontName, true);
+                        if (fallback != null)
+                        {
+                            dynamicFont = fallback;
+                            ApplyCustomFontToAllTexts();
+                            Logger.LogInfo($"Set UI.Text dynamic font to: {fontName}");
+                            return;
+                        }
                     }
                     else
                     {
