@@ -144,7 +144,7 @@ namespace TTFLoaderIL2CPP
                 }
 
                 // 2) 尝试实例字段，需获取单例实例
-                object instance = GetTMPSettingsInstance(settingsType);
+                object instance = GetTMPSettingsInstance();
                 if (instance != null)
                 {
                     foreach (string name in fieldNames)
@@ -187,11 +187,13 @@ namespace TTFLoaderIL2CPP
         /// <summary>
         /// 获取 TMP_Settings 的单例实例。
         /// 依次尝试：instance 属性、s_instance 静态字段、已加载的对象查找。
+        /// 注意：IL2CPP 版本使用泛型 FindObjectsOfTypeAll 以避免 System.Type 与 Il2CppSystem.Type 不兼容问题。
         /// </summary>
-        /// <param name="settingsType">TMP_Settings 类型</param>
         /// <returns>TMP_Settings 实例，找不到返回 null</returns>
-        private object GetTMPSettingsInstance(Type settingsType)
+        private object GetTMPSettingsInstance()
         {
+            var settingsType = typeof(TMPro.TMP_Settings);
+
             // 1) 通过 instance 属性
             var instanceProp = settingsType.GetProperty("instance",
                 System.Reflection.BindingFlags.Static |
@@ -214,10 +216,18 @@ namespace TTFLoaderIL2CPP
                 if (inst != null) return inst;
             }
 
-            // 3) 查找已加载的 TMP_Settings 对象
-            foreach (var obj in Resources.FindObjectsOfTypeAll(settingsType))
+            // 3) 查找已加载的 TMP_Settings 对象（使用泛型版本避免 Type 类型不兼容）
+            try
             {
-                if (obj != null) return obj;
+                var loaded = Resources.FindObjectsOfTypeAll<TMPro.TMP_Settings>();
+                if (loaded != null && loaded.Length > 0)
+                {
+                    return loaded[0];
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning($"FindObjectsOfTypeAll<TMP_Settings> failed: {ex.Message}");
             }
 
             return null;
