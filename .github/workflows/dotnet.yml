@@ -47,7 +47,9 @@ jobs:
         mkdir -p artifacts
         
         # 查找 IL2CPP DLL 并复制
-        DLL_IL2CPP=$(find . -name "TTFLoaderIL2CPP.dll" -path "*/Release/*" | head -n 1)
+        # -not -path "*/ref/*" 排除 ref/ 引用程序集：ref dll 只有类型签名、无 IL，
+        # 若被 head -n 1 选中打包，BepInEx 加载会报 0x80131058。
+        DLL_IL2CPP=$(find . -name "TTFLoaderIL2CPP.dll" -path "*/Release/*" -not -path "*/ref/*" | head -n 1)
         if [ -z "$DLL_IL2CPP" ]; then
           echo "TTFLoaderIL2CPP.dll not found!"
           exit 1
@@ -55,8 +57,8 @@ jobs:
         echo "Found TTFLoaderIL2CPP.dll at: $DLL_IL2CPP"
         cp "$DLL_IL2CPP" artifacts/
         
-        # 查找 Mono DLL 并复制
-        DLL_MONO=$(find . -name "TTFLoaderMono.dll" -path "*/Release/*" | head -n 1)
+        # 查找 Mono DLL 并复制（同样排除 ref/ 引用程序集）
+        DLL_MONO=$(find . -name "TTFLoaderMono.dll" -path "*/Release/*" -not -path "*/ref/*" | head -n 1)
         if [ -z "$DLL_MONO" ]; then
           echo "TTFLoaderMono.dll not found!"
           exit 1
@@ -65,6 +67,58 @@ jobs:
         cp "$DLL_MONO" artifacts/
         
         # 移除 README 和 LICENSE 复制步骤
+
+    - name: Verify DLLs are not reference assemblies
+      # 兜底校验：引用程序集（ref/）没有 IL 代码，误打包会导致 BepInEx 加载失败
+      # (BadImageFormatException 0x80131058)。校验 PE COR 头的 REF_ASSEMBLY 位(0x400000)。
+      run: |
+        python3 - <<'PY'
+        import sys, struct
+        def is_ref(path):
+            b = open(path, 'rb').read()
+            if b[0:2] != b'MZ':
+                return True
+            e = struct.unpack_from('<I', b, 0x3C)[0]
+            if b[e:e+4] != b'PE\x00\x00':
+                return True
+            coff = e + 4
+            nsec = struct.unpack_from('<H', b, coff + 2)[0]
+            optsize = struct.unpack_from('<H', b, coff + 16)[0]
+            opt = coff + 20
+            magic = struct.unpack_from('<H', b, opt)[0]
+            dd = opt + (112 if magic == 0x20b else 96)
+            cli_rva, _ = struct.unpack_from('<II', b, dd + 14 * 8)
+            if cli_rva == 0:
+                return True
+            sec = opt + optsize
+            secs = []
+            for i in range(nsec):
+                o = sec + i * 40
+                vsize = struct.unpack_from('<I', b, o + 8)[0]
+                vaddr = struct.unpack_from('<I', b, o + 12)[0]
+                rawsize = struct.unpack_from('<I', b, o + 16)[0]
+                rawoff = struct.unpack_from('<I', b, o + 20)[0]
+                secs.append((vaddr, vsize, rawoff, rawsize))
+            off = None
+            for (va, vs, ro, rs) in secs:
+                if va <= cli_rva < va + max(vs, rs):
+                    off = ro + (cli_rva - va)
+                    break
+            if off is None:
+                return True
+            flags = struct.unpack_from('<I', b, off + 16)[0]
+            return bool(flags & 0x00400000)
+        ok = True
+        for p in ['artifacts/TTFLoaderIL2CPP.dll', 'artifacts/TTFLoaderMono.dll']:
+            r = is_ref(p)
+            print(f"{p}: reference_assembly={r}")
+            if r:
+                ok = False
+        if not ok:
+            print("ERROR: 检测到引用程序集（ref dll），它不能用于运行，构建失败。")
+            sys.exit(1)
+        print("OK: 所有 DLL 均为可执行程序集（非 ref）。")
+        PY
 
     - name: Upload Artifacts
       # 上传构建产物，以便在 workflow 运行结束后下载检查

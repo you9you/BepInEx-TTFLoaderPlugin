@@ -28,7 +28,7 @@ namespace TTFLoaderMono
     {
         public const string PLUGIN_GUID = "com.github.you9you.ttfloader";
         public const string PLUGIN_NAME = "TTF Font Loader (Mono)";
-        public const string PLUGIN_VERSION = "1.1.0";
+        public const string PLUGIN_VERSION = "1.1.4";
 
         private static string fontsDirectory;
 
