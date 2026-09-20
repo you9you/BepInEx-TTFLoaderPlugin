@@ -4,7 +4,7 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>TTFLoaderMono</AssemblyName>
     <Description>BepInEx plugin to load TTF fonts directly</Description>
-    <Version>1.1.0</Version>
+    <Version>1.1.4</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
     <RestoreAdditionalProjectSources>
@@ -12,6 +12,8 @@
       https://nuget.bepinex.dev/v3/index.json
     </RestoreAdditionalProjectSources>
     <RootNamespace>TTFLoaderMono</RootNamespace>
+    <!-- 显式禁止生成 ref/ 引用程序集，避免 CI 误打包 ref dll -->
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
   </PropertyGroup>
 
   <ItemGroup>
